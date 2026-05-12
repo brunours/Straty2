@@ -60,8 +60,8 @@ src/
 
 ## Versioning
 
-Semantic versioning (MAJOR.MINOR.PATCH). Current: 0.1.0 (Phase 0 - Project Setup).
-See `releaseNotes.md` for full changelog.
+Semantic versioning (MAJOR.MINOR.PATCH). Current: 0.4.0 (Phase 3 - Cities, Resources & Visual Foundation).
+See `releaseNotes.md` for full changelog. Long-term plan: `.claude/plans/straty2-improvement-plan.md`.
 
 ## Game Constants Quick Reference
 

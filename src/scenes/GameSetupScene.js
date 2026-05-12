@@ -1,15 +1,17 @@
 /**
  * @file GameSetupScene.js
- * @description Game setup screen for configuring map size, fog of war,
- * AI difficulty, player names, and human/AI toggle.
- * @version 0.3.0
+ * @description Game setup screen. Configure map size, fog of war, AI
+ * difficulty, and the names + types of the first two players. Phase 7
+ * will expand this to 3-8 player slots.
+ * @version 0.4.0
  */
 
 import Phaser from 'phaser';
 import { MAP_SIZES, FOG_MODE } from '../config/constants.js';
+import { UI, HEX, PLAYER_PALETTE } from '../config/palette.js';
 import { GameState } from '../core/GameState.js';
+import { Player } from '../entities/Player.js';
 
-/** Setup option definitions */
 const MAP_SIZE_OPTIONS = Object.keys(MAP_SIZES);
 const FOG_OPTIONS = [
   { value: FOG_MODE.NONE, label: 'None' },
@@ -25,9 +27,9 @@ export class GameSetupScene extends Phaser.Scene {
 
   create() {
     const { width, height } = this.cameras.main;
-    this.cameras.main.setBackgroundColor('#1a1a2e');
+    // Same gradient background as MainMenu for continuity
+    this._drawBackground(width, height);
 
-    // State for selections
     this._settings = {
       mapSize: 'MEDIUM',
       fogMode: FOG_MODE.NONE,
@@ -37,173 +39,168 @@ export class GameSetupScene extends Phaser.Scene {
       player2IsAI: true
     };
 
-    // Title
-    this.add.text(width / 2, 40, 'Game Setup', {
-      fontSize: '42px',
-      fontFamily: 'Georgia, serif',
-      color: '#c4a44a',
-      fontStyle: 'bold'
+    // Header
+    this.add.text(width / 2, 50, 'GAME SETUP', {
+      fontSize: '40px',
+      fontFamily: 'Cinzel, Georgia, serif',
+      color: HEX.accent,
+      fontStyle: '900',
+      stroke: '#1a1208', strokeThickness: 4
     }).setOrigin(0.5);
 
-    let yPos = 110;
-    const leftCol = width * 0.3;
-    const rightCol = width * 0.65;
-    const rowGap = 65;
-
-    // --- Map Size ---
-    this.add.text(leftCol, yPos, 'Map Size:', {
-      fontSize: '20px',
-      fontFamily: 'Georgia, serif',
-      color: '#cccccc'
+    this.add.text(width / 2, 88, 'Configure your scenario', {
+      fontSize: '14px',
+      fontFamily: 'Inter, Arial, sans-serif',
+      color: HEX.textMuted
     }).setOrigin(0.5);
 
-    this._mapSizeText = this._createCycleButton(rightCol, yPos, MAP_SIZE_OPTIONS, 1, (val) => {
-      this._settings.mapSize = val;
-    }, (val) => MAP_SIZES[val].label);
+    let yPos = 150;
+    const leftCol = width * 0.30;
+    const rightCol = width * 0.62;
+    const rowGap = 62;
 
+    const label = (text, color = HEX.textSecondary) => this.add.text(leftCol, yPos, text, {
+      fontSize: '18px',
+      fontFamily: 'Cinzel, Georgia, serif',
+      color,
+      fontStyle: '500'
+    }).setOrigin(0.5);
+
+    label('Map Size');
+    this._createCycleButton(rightCol, yPos, MAP_SIZE_OPTIONS, 1,
+      v => this._settings.mapSize = v,
+      v => MAP_SIZES[v].label);
     yPos += rowGap;
 
-    // --- Fog of War ---
-    this.add.text(leftCol, yPos, 'Fog of War:', {
-      fontSize: '20px',
-      fontFamily: 'Georgia, serif',
-      color: '#cccccc'
-    }).setOrigin(0.5);
-
-    this._createCycleButton(rightCol, yPos, FOG_OPTIONS.map(o => o.value), 0, (val) => {
-      this._settings.fogMode = val;
-    }, (val) => FOG_OPTIONS.find(o => o.value === val).label);
-
+    label('Fog of War');
+    this._createCycleButton(rightCol, yPos, FOG_OPTIONS.map(o => o.value), 0,
+      v => this._settings.fogMode = v,
+      v => FOG_OPTIONS.find(o => o.value === v).label);
     yPos += rowGap;
 
-    // --- AI Difficulty ---
-    this.add.text(leftCol, yPos, 'AI Difficulty:', {
-      fontSize: '20px',
-      fontFamily: 'Georgia, serif',
-      color: '#cccccc'
-    }).setOrigin(0.5);
-
-    this._createCycleButton(rightCol, yPos, AI_DIFFICULTY_OPTIONS, 1, (val) => {
-      this._settings.aiDifficulty = val;
-    }, (val) => val.charAt(0) + val.slice(1).toLowerCase());
-
+    label('AI Difficulty');
+    this._createCycleButton(rightCol, yPos, AI_DIFFICULTY_OPTIONS, 1,
+      v => this._settings.aiDifficulty = v,
+      v => v.charAt(0) + v.slice(1).toLowerCase());
     yPos += rowGap;
 
-    // --- Player 1 Name ---
-    this.add.text(leftCol, yPos, 'Player 1:', {
-      fontSize: '20px',
-      fontFamily: 'Georgia, serif',
-      color: '#4488ff'
+    // Player 1 (with color swatch)
+    this.add.text(leftCol, yPos, 'Player 1', {
+      fontSize: '18px',
+      fontFamily: 'Cinzel, Georgia, serif',
+      color: this._intToHex(PLAYER_PALETTE[0]),
+      fontStyle: '700'
     }).setOrigin(0.5);
-
-    this._p1NameText = this._createEditableText(rightCol, yPos, 'Player 1', (val) => {
-      this._settings.player1Name = val;
-    });
-
+    this._createEditableText(rightCol, yPos, 'Player 1', v => this._settings.player1Name = v);
     yPos += rowGap;
 
-    // --- Player 2 Name ---
-    this.add.text(leftCol, yPos, 'Player 2:', {
-      fontSize: '20px',
-      fontFamily: 'Georgia, serif',
-      color: '#ff4444'
+    this.add.text(leftCol, yPos, 'Player 2', {
+      fontSize: '18px',
+      fontFamily: 'Cinzel, Georgia, serif',
+      color: this._intToHex(PLAYER_PALETTE[1]),
+      fontStyle: '700'
     }).setOrigin(0.5);
-
-    this._p2NameText = this._createEditableText(rightCol, yPos, 'Player 2', (val) => {
-      this._settings.player2Name = val;
-    });
-
+    this._createEditableText(rightCol, yPos, 'Player 2', v => this._settings.player2Name = v);
     yPos += rowGap;
 
-    // --- Player 2 AI toggle ---
-    this.add.text(leftCol, yPos, 'Player 2 Type:', {
-      fontSize: '20px',
-      fontFamily: 'Georgia, serif',
-      color: '#cccccc'
-    }).setOrigin(0.5);
+    label('Player 2 Type');
+    this._createCycleButton(rightCol, yPos, [true, false], 0,
+      v => this._settings.player2IsAI = v,
+      v => v ? 'AI' : 'Human');
+    yPos += rowGap + 14;
 
-    this._createCycleButton(rightCol, yPos, [true, false], 0, (val) => {
-      this._settings.player2IsAI = val;
-    }, (val) => val ? 'AI' : 'Human');
+    // Start
+    this._createStartButton(width / 2, yPos + 12);
 
-    yPos += rowGap + 20;
-
-    // --- Start Button ---
-    this._createStartButton(width / 2, yPos);
-
-    // --- Back Button ---
-    this._createBackButton(80, height - 40);
+    // Back
+    this._createBackButton(64, height - 36);
   }
 
-  /**
-   * Create a cycle button (click to cycle through options).
-   * @private
-   */
+  _drawBackground(w, h) {
+    const g = this.add.graphics();
+    const steps = 32;
+    for (let i = 0; i < steps; i++) {
+      const t = i / (steps - 1);
+      const r = Math.round(0x1d + (0x0d - 0x1d) * t);
+      const gr = Math.round(0x24 + (0x10 - 0x24) * t);
+      const b = Math.round(0x40 + (0x20 - 0x40) * t);
+      g.fillStyle((r << 16) | (gr << 8) | b, 1);
+      g.fillRect(0, (h / steps) * i, w, h / steps + 1);
+    }
+  }
+
+  _intToHex(n) { return '#' + n.toString(16).padStart(6, '0'); }
+
   _createCycleButton(x, y, options, defaultIndex, onChange, formatLabel) {
     let currentIndex = defaultIndex;
-    const btnWidth = 220;
-    const btnHeight = 36;
+    const btnWidth = 240;
+    const btnHeight = 38;
 
     const bg = this.add.graphics();
     const text = this.add.text(x, y, '', {
-      fontSize: '18px',
-      fontFamily: 'Arial, sans-serif',
-      color: '#ffffff'
+      fontSize: '17px',
+      fontFamily: 'Inter, Arial, sans-serif',
+      color: HEX.textPrimary,
+      fontStyle: '500'
     }).setOrigin(0.5);
 
-    const updateDisplay = () => {
-      const val = options[currentIndex];
-      text.setText(formatLabel(val));
+    const arrowL = this.add.text(x - btnWidth / 2 + 12, y, '◀', {
+      fontSize: '13px', fontFamily: 'Inter, Arial, sans-serif', color: HEX.accent
+    }).setOrigin(0, 0.5);
+    const arrowR = this.add.text(x + btnWidth / 2 - 12, y, '▶', {
+      fontSize: '13px', fontFamily: 'Inter, Arial, sans-serif', color: HEX.accent
+    }).setOrigin(1, 0.5);
+
+    const draw = (fill, border) => {
       bg.clear();
-      bg.fillStyle(0x2a2a4a, 1);
+      bg.fillStyle(fill, 1);
       bg.fillRoundedRect(x - btnWidth / 2, y - btnHeight / 2, btnWidth, btnHeight, 6);
-      bg.lineStyle(1, 0x666688, 1);
+      bg.lineStyle(1.2, border, 1);
       bg.strokeRoundedRect(x - btnWidth / 2, y - btnHeight / 2, btnWidth, btnHeight, 6);
     };
 
-    updateDisplay();
+    const setVal = () => {
+      const val = options[currentIndex];
+      text.setText(formatLabel(val));
+    };
+
+    draw(UI.panel, UI.panelBorder);
+    setVal();
 
     const zone = this.add.zone(x, y, btnWidth, btnHeight).setInteractive({ useHandCursor: true });
     zone.on('pointerdown', () => {
       currentIndex = (currentIndex + 1) % options.length;
-      updateDisplay();
+      setVal();
       onChange(options[currentIndex]);
     });
-    zone.on('pointerover', () => {
-      bg.clear();
-      bg.fillStyle(0x3a3a5a, 1);
-      bg.fillRoundedRect(x - btnWidth / 2, y - btnHeight / 2, btnWidth, btnHeight, 6);
-      bg.lineStyle(1, 0x8888aa, 1);
-      bg.strokeRoundedRect(x - btnWidth / 2, y - btnHeight / 2, btnWidth, btnHeight, 6);
-    });
-    zone.on('pointerout', updateDisplay);
+    zone.on('pointerover', () => draw(0x252c4a, UI.accent));
+    zone.on('pointerout',  () => draw(UI.panel, UI.panelBorder));
 
     return text;
   }
 
-  /**
-   * Create an editable text field (click to edit via prompt).
-   * @private
-   */
   _createEditableText(x, y, defaultValue, onChange) {
-    const btnWidth = 220;
-    const btnHeight = 36;
+    const btnWidth = 240;
+    const btnHeight = 38;
 
     const bg = this.add.graphics();
-    bg.fillStyle(0x2a2a4a, 1);
+    bg.fillStyle(UI.panel, 1);
     bg.fillRoundedRect(x - btnWidth / 2, y - btnHeight / 2, btnWidth, btnHeight, 6);
-    bg.lineStyle(1, 0x666688, 1);
+    bg.lineStyle(1.2, UI.panelBorder, 1);
     bg.strokeRoundedRect(x - btnWidth / 2, y - btnHeight / 2, btnWidth, btnHeight, 6);
 
     const text = this.add.text(x, y, defaultValue, {
-      fontSize: '18px',
-      fontFamily: 'Arial, sans-serif',
-      color: '#ffffff'
+      fontSize: '17px',
+      fontFamily: 'Inter, Arial, sans-serif',
+      color: HEX.textPrimary
     }).setOrigin(0.5);
+    const pencil = this.add.text(x + btnWidth / 2 - 12, y, '✎', {
+      fontSize: '14px', fontFamily: 'Inter, Arial, sans-serif', color: HEX.accent
+    }).setOrigin(1, 0.5);
 
     const zone = this.add.zone(x, y, btnWidth, btnHeight).setInteractive({ useHandCursor: true });
     zone.on('pointerdown', () => {
-      const input = prompt('Enter name:', text.text);
+      const input = prompt('Enter player name:', text.text);
       if (input && input.trim()) {
         const name = input.trim().substring(0, 16);
         text.setText(name);
@@ -214,96 +211,63 @@ export class GameSetupScene extends Phaser.Scene {
     return text;
   }
 
-  /**
-   * Create the Start Game button.
-   * @private
-   */
   _createStartButton(x, y) {
     const btnWidth = 280;
-    const btnHeight = 55;
+    const btnHeight = 56;
 
     const bg = this.add.graphics();
-    bg.fillStyle(0x336633, 1);
-    bg.fillRoundedRect(x - btnWidth / 2, y - btnHeight / 2, btnWidth, btnHeight, 10);
-    bg.lineStyle(2, 0x66cc66, 1);
-    bg.strokeRoundedRect(x - btnWidth / 2, y - btnHeight / 2, btnWidth, btnHeight, 10);
-
-    const text = this.add.text(x, y, 'Start Game', {
-      fontSize: '26px',
-      fontFamily: 'Georgia, serif',
-      color: '#66cc66',
-      fontStyle: 'bold'
+    const text = this.add.text(x, y, 'Start Game  ⚔', {
+      fontSize: '24px',
+      fontFamily: 'Cinzel, Georgia, serif',
+      color: HEX.accent,
+      fontStyle: '700'
     }).setOrigin(0.5);
 
+    const draw = (fill, border, color) => {
+      bg.clear();
+      bg.fillStyle(fill, 1);
+      bg.fillRoundedRect(x - btnWidth / 2, y - btnHeight / 2, btnWidth, btnHeight, 8);
+      bg.lineStyle(2, border, 1);
+      bg.strokeRoundedRect(x - btnWidth / 2, y - btnHeight / 2, btnWidth, btnHeight, 8);
+      text.setColor(color);
+    };
+
+    draw(UI.successDark, UI.success, HEX.accent);
+
     const zone = this.add.zone(x, y, btnWidth, btnHeight).setInteractive({ useHandCursor: true });
-
-    zone.on('pointerover', () => {
-      bg.clear();
-      bg.fillStyle(0x448844, 1);
-      bg.fillRoundedRect(x - btnWidth / 2, y - btnHeight / 2, btnWidth, btnHeight, 10);
-      bg.lineStyle(2, 0x88ee88, 1);
-      bg.strokeRoundedRect(x - btnWidth / 2, y - btnHeight / 2, btnWidth, btnHeight, 10);
-      text.setColor('#88ee88');
-    });
-
-    zone.on('pointerout', () => {
-      bg.clear();
-      bg.fillStyle(0x336633, 1);
-      bg.fillRoundedRect(x - btnWidth / 2, y - btnHeight / 2, btnWidth, btnHeight, 10);
-      bg.lineStyle(2, 0x66cc66, 1);
-      bg.strokeRoundedRect(x - btnWidth / 2, y - btnHeight / 2, btnWidth, btnHeight, 10);
-      text.setColor('#66cc66');
-    });
-
+    zone.on('pointerover', () => draw(0x3d8830, UI.success, HEX.accentBright));
+    zone.on('pointerout',  () => draw(UI.successDark, UI.success, HEX.accent));
     zone.on('pointerdown', () => {
-      this._startGame();
+      draw(0x1f4a18, UI.success, HEX.accent);
+      this.tweens.add({ targets: [text], scale: 0.96, duration: 80, yoyo: true });
+      this.time.delayedCall(90, () => this._startGame());
     });
   }
 
-  /**
-   * Create the Back button.
-   * @private
-   */
   _createBackButton(x, y) {
-    const text = this.add.text(x, y, '< Back', {
-      fontSize: '18px',
-      fontFamily: 'Georgia, serif',
-      color: '#888888'
+    const text = this.add.text(x, y, '◀ Back', {
+      fontSize: '16px',
+      fontFamily: 'Cinzel, Georgia, serif',
+      color: HEX.textMuted
     }).setOrigin(0.5).setInteractive({ useHandCursor: true });
 
-    text.on('pointerover', () => text.setColor('#cccccc'));
-    text.on('pointerout', () => text.setColor('#888888'));
+    text.on('pointerover', () => text.setColor(HEX.accentBright));
+    text.on('pointerout',  () => text.setColor(HEX.textMuted));
     text.on('pointerdown', () => this.scene.start('MainMenuScene'));
   }
 
-  /**
-   * Initialize GameState with selected settings and start the game.
-   * @private
-   */
   _startGame() {
     GameState.reset();
     GameState.settings = { ...this._settings };
 
-    // Set up players
     GameState.players = [
-      {
-        name: this._settings.player1Name,
-        isAI: false,
-        color: 0x4488ff,
-        resources: { wood: 0, stone: 0, food: 50, metal: 0 },
-        researchedTechs: new Set(),
-        currentResearch: null,
-        researchProgress: 0
-      },
-      {
+      new Player({ index: 0, name: this._settings.player1Name, isAI: false }),
+      new Player({
+        index: 1,
         name: this._settings.player2Name,
         isAI: this._settings.player2IsAI,
-        color: 0xff4444,
-        resources: { wood: 0, stone: 0, food: 50, metal: 0 },
-        researchedTechs: new Set(),
-        currentResearch: null,
-        researchProgress: 0
-      }
+        aiDifficulty: this._settings.aiDifficulty
+      })
     ];
 
     this.scene.start('GameScene');

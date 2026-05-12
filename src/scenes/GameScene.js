@@ -1,35 +1,48 @@
 /**
  * @file GameScene.js
- * @description Primary gameplay scene. Orchestrates map generation, rendering,
- * camera controls, hex selection, and turn management. Launches UIScene as
- * a parallel overlay.
- * @version 0.3.0
+ * @description Primary gameplay scene. Generates the map, places starting
+ * units, renders hexes / cities / units, handles input, and drives the
+ * turn loop via TurnManager.
+ * @version 0.4.0
  */
 
 import Phaser from 'phaser';
 import { HexGrid } from '../core/HexGrid.js';
 import { MapGenerator } from '../core/MapGenerator.js';
 import { HexRenderer } from '../ui/HexRenderer.js';
+import { CityRenderer } from '../ui/CityRenderer.js';
+import { UnitRenderer } from '../ui/UnitRenderer.js';
 import { GameState } from '../core/GameState.js';
 import { TurnManager } from '../core/TurnManager.js';
 import { EventBus, EVENTS } from '../core/EventBus.js';
+import { CommandManager } from '../core/CommandManager.js';
+import { FoundCityCommand } from '../core/commands/FoundCityCommand.js';
+import { UpgradeCityCommand } from '../core/commands/UpgradeCityCommand.js';
+import { CityFoundingSystem } from '../systems/CityFoundingSystem.js';
 import { MAP_SIZES, HEX_SIZE, ZOOM_MIN, ZOOM_MAX, ZOOM_STEP, PAN_SPEED } from '../config/constants.js';
-import { TERRAIN_CONFIG } from '../config/terrainConfig.js';
+import { Unit, UNIT_TYPE } from '../entities/Unit.js';
 
 export class GameScene extends Phaser.Scene {
   constructor() {
     super({ key: 'GameScene' });
     this.hexRenderer = null;
+    this.cityRenderer = null;
+    this.unitRenderer = null;
     this.turnManager = null;
+    this.commandManager = null;
     this._cursors = null;
     this._wasd = null;
     this._needsRedraw = true;
+    this._needsEntityRedraw = true;
     this._isDragging = false;
     this._dragStartX = 0;
     this._dragStartY = 0;
   }
 
   create() {
+    // Background colour for the world view (visible behind map edges)
+    this.cameras.main.setBackgroundColor('#0d1020');
+
     // Generate map based on settings
     const mapSizeKey = GameState.settings.mapSize || 'MEDIUM';
     const { cols, rows } = MAP_SIZES[mapSizeKey];
@@ -40,10 +53,16 @@ export class GameScene extends Phaser.Scene {
     const genTime = (performance.now() - startTime).toFixed(1);
     console.log(`Map generated in ${genTime}ms (${GameState.hexMap.size} hexes)`);
 
-    // Create hex renderer
-    this.hexRenderer = new HexRenderer(this, GameState.hexMap);
+    // Spawn starting Settlers
+    this._spawnStarters();
 
-    // Set up camera bounds
+    // Renderers
+    this.hexRenderer = new HexRenderer(this, GameState.hexMap);
+    this.cityRenderer = new CityRenderer(this);
+    this.unitRenderer = new UnitRenderer(this);
+    this.commandManager = new CommandManager();
+
+    // Camera bounds
     const bottomRight = HexGrid.axialToPixel(cols, rows);
     const padding = HEX_SIZE * 4;
     this.cameras.main.setBounds(
@@ -52,11 +71,18 @@ export class GameScene extends Phaser.Scene {
       bottomRight.y + padding * 2
     );
 
-    // Center camera on map
-    const center = HexGrid.axialToPixel(Math.floor(cols / 2), Math.floor(rows / 2));
-    this.cameras.main.centerOn(center.x, center.y);
+    // Center camera on player 1's starting unit, fall back to map center
+    const myUnits = GameState.getPlayerUnits(0);
+    if (myUnits.length > 0) {
+      const u = myUnits[0];
+      const p = HexGrid.axialToPixel(u.q, u.r);
+      this.cameras.main.centerOn(p.x, p.y);
+    } else {
+      const center = HexGrid.axialToPixel(Math.floor(cols / 2), Math.floor(rows / 2));
+      this.cameras.main.centerOn(center.x, center.y);
+    }
 
-    // Keyboard input for camera panning
+    // Input setup
     this._cursors = this.input.keyboard.createCursorKeys();
     this._wasd = this.input.keyboard.addKeys({
       up: Phaser.Input.Keyboard.KeyCodes.W,
@@ -109,23 +135,44 @@ export class GameScene extends Phaser.Scene {
       }
     });
 
-    // Escape key to deselect
-    this.input.keyboard.on('keydown-ESC', () => {
-      this._clearSelection();
-    });
+    // Escape: deselect
+    this.input.keyboard.on('keydown-ESC', () => this._clearSelection());
 
-    // Launch UIScene as parallel overlay
+    // Parallel UI scene
     this.scene.launch('UIScene');
 
-    // Initialize turn manager and start the game
+    // Turn loop
     this.turnManager = new TurnManager();
     this.turnManager.startGame();
 
-    // Initial render
+    // First render
     this.hexRenderer.render(this.cameras.main);
+    this.cityRenderer.renderAll();
+    this.unitRenderer.renderAll();
 
-    // Listen for game events
     this._setupEventListeners();
+  }
+
+  /**
+   * Place a Settler for each player on a good starting hex.
+   * @private
+   */
+  _spawnStarters() {
+    const starts = [];
+    for (let i = 0; i < GameState.players.length; i++) {
+      const start = CityFoundingSystem.findStartHex(starts);
+      if (!start) continue;
+      starts.push(start);
+
+      const settler = new Unit({
+        id: GameState.generateUnitId(),
+        type: UNIT_TYPE.SETTLER,
+        playerIndex: i,
+        q: start.q,
+        r: start.r
+      });
+      GameState.addUnit(settler);
+    }
   }
 
   update() {
@@ -133,44 +180,29 @@ export class GameScene extends Phaser.Scene {
     const panSpeed = PAN_SPEED / cam.zoom;
     let moved = false;
 
-    // Camera panning via keyboard
-    if (this._cursors.left.isDown || this._wasd.left.isDown) {
-      cam.scrollX -= panSpeed;
-      moved = true;
-    }
-    if (this._cursors.right.isDown || this._wasd.right.isDown) {
-      cam.scrollX += panSpeed;
-      moved = true;
-    }
-    if (this._cursors.up.isDown || this._wasd.up.isDown) {
-      cam.scrollY -= panSpeed;
-      moved = true;
-    }
-    if (this._cursors.down.isDown || this._wasd.down.isDown) {
-      cam.scrollY += panSpeed;
-      moved = true;
-    }
+    if (this._cursors.left.isDown || this._wasd.left.isDown)   { cam.scrollX -= panSpeed; moved = true; }
+    if (this._cursors.right.isDown || this._wasd.right.isDown) { cam.scrollX += panSpeed; moved = true; }
+    if (this._cursors.up.isDown || this._wasd.up.isDown)       { cam.scrollY -= panSpeed; moved = true; }
+    if (this._cursors.down.isDown || this._wasd.down.isDown)   { cam.scrollY += panSpeed; moved = true; }
 
     if (moved || this._needsRedraw) {
       this.hexRenderer.render(cam);
       this._needsRedraw = false;
     }
+    if (this._needsEntityRedraw) {
+      this.cityRenderer.renderAll();
+      this.unitRenderer.renderAll();
+      this._needsEntityRedraw = false;
+    }
   }
 
-  /**
-   * Handle a hex being clicked.
-   * @private
-   * @param {number} q
-   * @param {number} r
-   */
+  // ---------- Selection / commands ----------
+
   _handleHexClick(q, r) {
     const hex = GameState.hexMap.getHex(q, r);
-    if (!hex) {
-      this._clearSelection();
-      return;
-    }
+    if (!hex) { this._clearSelection(); return; }
 
-    // Check for unit at hex
+    // Unit takes priority, then city, then hex
     const unit = GameState.getUnitAt(q, r);
     if (unit) {
       GameState.selectionType = 'unit';
@@ -180,7 +212,6 @@ export class GameScene extends Phaser.Scene {
       return;
     }
 
-    // Check for city at hex
     const city = GameState.getCityAt(q, r);
     if (city) {
       GameState.selectionType = 'city';
@@ -190,17 +221,12 @@ export class GameScene extends Phaser.Scene {
       return;
     }
 
-    // Select the hex itself
     GameState.selectionType = 'hex';
     GameState.selectionData = hex;
     this.hexRenderer.setSelection(q, r);
     EventBus.emit(EVENTS.HEX_SELECTED, { hex });
   }
 
-  /**
-   * Clear the current selection.
-   * @private
-   */
   _clearSelection() {
     GameState.selectionType = null;
     GameState.selectionData = null;
@@ -208,45 +234,61 @@ export class GameScene extends Phaser.Scene {
     EventBus.emit(EVENTS.SELECTION_CLEARED);
   }
 
-  /**
-   * Set up listeners for game events.
-   * @private
-   */
-  _setupEventListeners() {
-    EventBus.on(EVENTS.UNIT_MOVED, () => {
-      this._needsRedraw = true;
-    });
-
-    EventBus.on(EVENTS.CITY_FOUNDED, () => {
-      this._needsRedraw = true;
-    });
-
-    EventBus.on(EVENTS.COMBAT_RESOLVED, () => {
-      this._needsRedraw = true;
-    });
-
-    EventBus.on(EVENTS.FOG_UPDATED, () => {
-      this._needsRedraw = true;
-    });
+  /** Issue FoundCity for the currently selected Settler. */
+  requestFoundCity() {
+    if (GameState.selectionType !== 'unit') return false;
+    const unit = GameState.selectionData;
+    if (!unit?.canFoundCity) return false;
+    const cmd = new FoundCityCommand(unit.id);
+    const ok = this.commandManager.execute(cmd);
+    if (ok) {
+      // Re-select the new city
+      const city = GameState.cities.get(cmd.cityCreated);
+      if (city) {
+        GameState.selectionType = 'city';
+        GameState.selectionData = city;
+        EventBus.emit(EVENTS.CITY_SELECTED, { city, hex: GameState.hexMap.getHex(city.q, city.r) });
+      } else {
+        this._clearSelection();
+      }
+    }
+    return ok;
   }
 
-  /**
-   * Center camera on a hex coordinate.
-   * @param {number} q
-   * @param {number} r
-   */
+  /** Issue UpgradeCity for the currently selected city. */
+  requestUpgradeCity() {
+    if (GameState.selectionType !== 'city') return false;
+    const city = GameState.selectionData;
+    const cmd = new UpgradeCityCommand(city.id);
+    const ok = this.commandManager.execute(cmd);
+    if (ok) {
+      EventBus.emit(EVENTS.CITY_SELECTED, { city, hex: GameState.hexMap.getHex(city.q, city.r) });
+    }
+    return ok;
+  }
+
+  _setupEventListeners() {
+    EventBus.on(EVENTS.UNIT_MOVED,      () => { this._needsRedraw = true; this._needsEntityRedraw = true; });
+    EventBus.on(EVENTS.UNIT_CREATED,    () => { this._needsEntityRedraw = true; });
+    EventBus.on(EVENTS.UNIT_DESTROYED,  () => { this._needsEntityRedraw = true; });
+    EventBus.on(EVENTS.CITY_FOUNDED,    () => { this._needsEntityRedraw = true; this._needsRedraw = true; });
+    EventBus.on(EVENTS.CITY_EVOLVED,    () => { this._needsEntityRedraw = true; });
+    EventBus.on(EVENTS.COMBAT_RESOLVED, () => { this._needsRedraw = true; this._needsEntityRedraw = true; });
+    EventBus.on(EVENTS.FOG_UPDATED,     () => { this._needsRedraw = true; });
+    EventBus.on(EVENTS.TURN_STARTED,    () => { this._needsEntityRedraw = true; });
+  }
+
   centerOnHex(q, r) {
     const { x, y } = HexGrid.axialToPixel(q, r);
     this.cameras.main.centerOn(x, y);
     this._needsRedraw = true;
   }
 
-  /**
-   * Clean up when leaving the scene.
-   */
   shutdown() {
     EventBus.clear();
     if (this.hexRenderer) this.hexRenderer.destroy();
+    if (this.cityRenderer) this.cityRenderer.destroy();
+    if (this.unitRenderer) this.unitRenderer.destroy();
     this.scene.stop('UIScene');
   }
 }

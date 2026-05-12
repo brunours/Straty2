@@ -1,12 +1,14 @@
 /**
  * @file TurnManager.js
  * @description Manages turn sequencing: start turn processing, end turn,
- * advance to next player, trigger AI turns.
- * @version 0.3.0
+ * advance to next player, trigger systems and AI turns.
+ * @version 0.4.0
  */
 
 import { GameState } from './GameState.js';
 import { EventBus, EVENTS } from './EventBus.js';
+import { ResourceSystem } from '../systems/ResourceSystem.js';
+import { CityGrowthSystem } from '../systems/CityGrowthSystem.js';
 
 export class TurnManager {
   constructor() {
@@ -37,10 +39,10 @@ export class TurnManager {
     if (this._processing) return;
     this._processing = true;
 
-    const currentPlayer = GameState.getCurrentPlayer();
+    const playerIndex = GameState.currentPlayerIndex;
 
     // Reset unit movement for current player
-    GameState.getPlayerUnits(GameState.currentPlayerIndex).forEach(unit => {
+    GameState.getPlayerUnits(playerIndex).forEach(unit => {
       unit.hasMoved = false;
       unit.hasActed = false;
       unit.movementRemaining = unit.movement;
@@ -48,28 +50,38 @@ export class TurnManager {
 
     EventBus.emit(EVENTS.TURN_ENDED, {
       turnNumber: GameState.turnNumber,
-      playerIndex: GameState.currentPlayerIndex
+      playerIndex
     });
 
-    // Advance to next player
-    GameState.currentPlayerIndex = (GameState.currentPlayerIndex + 1) % GameState.players.length;
-
-    // If back to player 0, increment turn number
-    if (GameState.currentPlayerIndex === 0) {
-      GameState.turnNumber++;
-    }
+    // Advance to next non-eliminated player
+    const playerCount = GameState.players.length;
+    let safety = playerCount + 1;
+    do {
+      GameState.currentPlayerIndex = (GameState.currentPlayerIndex + 1) % playerCount;
+      if (GameState.currentPlayerIndex === 0) GameState.turnNumber++;
+      safety--;
+    } while (safety > 0 && GameState.getCurrentPlayer()?.eliminated);
 
     this._processing = false;
     this._startTurn();
   }
 
   /**
-   * Process start-of-turn effects for the current player.
+   * Process start-of-turn effects for the current player:
+   *   1. Resource income from cities
+   *   2. City population growth
+   *   3. Reset movement on player units
+   *   4. Emit TURN_STARTED
    * @private
    */
   _startTurn() {
     const playerIndex = GameState.currentPlayerIndex;
     const player = GameState.getCurrentPlayer();
+    if (!player) return;
+
+    // Per-turn systems
+    ResourceSystem.applyTurnIncome(playerIndex);
+    CityGrowthSystem.processPlayer(playerIndex);
 
     // Reset movement for new turn's units
     GameState.getPlayerUnits(playerIndex).forEach(unit => {

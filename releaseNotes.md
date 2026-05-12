@@ -31,6 +31,39 @@
 
 ---
 
+## v0.4.0 - Cities, Resources & Visual Foundation (2026-05-12)
+
+### Gameplay
+- New entities: `Player`, `City`, `ResourceNode`, `Unit` (Settler/Worker/Scout skeletons)
+- City evolution levels: Camp → Village → Town → City (configurable in `cityConfig.js`)
+- Per-turn resource income from city territory (tile yields + river/resource-node bonuses)
+- City population growth driven by accumulated food
+- City-founding via Settler, consumed on use; min distance enforced between cities
+- City upgrade command spends resources to evolve to next level
+- TurnManager now skips eliminated players and increments turn only after a full round
+- 8-color player palette already wired in (used in Phase 7 for 3-8 players)
+
+### Visuals
+- **Locked color palette** (`config/palette.js`): two-tone terrain colors, river, resource, UI, player slot palette
+- HexRenderer overhauled: two-tone shading, procedural decorations per terrain (trees, mountain peaks, hills, dunes, swamp reeds, ocean waves), stylized river ellipses, badge-style resource markers, glowing selection ring
+- CityRenderer: per-level silhouettes (tents → huts → walled town → stepped citadel) with owner-colored banners, name + population labels
+- UnitRenderer: stylized Settler with owner-colored banner; placeholders for Worker/Scout
+- Main menu redesign: animated drifting hex pattern background, vertical gradient, Cinzel display title with pulse + glow halo, polished gold-accent buttons
+- Setup scene restyled to match menu (gradient background, Cinzel headings, ◀/▶ cycle buttons with hover)
+- HUD redesign: glassmorphic top bar with player banner, animated tweened resource counters, glyph icons per resource, polished End Turn button
+- SelectionPanel: action buttons (Found City, Upgrade City), per-level city details, food-progress display
+- Minimap: palette-tinted dots, river overlay, player-colored city markers, gold viewport rectangle
+- Cinzel + Inter fonts loaded via Google Fonts in `index.html`
+
+### Technical
+- New folders: `entities/`, `systems/`, `core/commands/`
+- Command pattern: `FoundCityCommand`, `UpgradeCityCommand` dispatch via `CommandManager`
+- `GameState` now uses entity classes with proper `toJSON`/`fromJSON`
+- Per-turn pipeline: ResourceSystem → CityGrowthSystem → emit `TURN_STARTED`
+- New events: `CITY_EVOLVED` already in registry, now actively used
+
+---
+
 ## v0.3.0 - Game State, UI & Camera (2026-02-13)
 
 ### Added

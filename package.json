@@ -1,6 +1,6 @@
 {
   "name": "straty2",
-  "version": "0.1.0",
+  "version": "0.4.0",
   "description": "Bronze Age 4X hex strategy game built with Phaser 3",
   "type": "module",
   "scripts": {

@@ -69,7 +69,7 @@ npm run preview
 
 ## Current Version
 
-**v0.1.0** - Project Setup
+**v0.4.0** - Cities, Resources & Visual Foundation
 
 ## License
 

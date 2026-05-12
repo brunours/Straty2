@@ -2,11 +2,13 @@
  * @file GameState.js
  * @description Central game state singleton. Single source of truth for all
  * game data: map, players, units, cities, settings, turn info.
- * @version 0.3.0
+ * @version 0.4.0
  */
 
 import { HexMap } from './HexMap.js';
-import { HexGrid } from './HexGrid.js';
+import { Player } from '../entities/Player.js';
+import { City } from '../entities/City.js';
+import { Unit } from '../entities/Unit.js';
 
 class GameStateClass {
   constructor() {
@@ -20,7 +22,7 @@ class GameStateClass {
     /** @type {HexMap|null} */
     this.hexMap = null;
 
-    /** @type {Array<Object>} Player data objects */
+    /** @type {Array<Player>} */
     this.players = [];
 
     /** @type {number} Index into players array for whose turn it is */
@@ -29,10 +31,10 @@ class GameStateClass {
     /** @type {number} Current turn number (starts at 1) */
     this.turnNumber = 1;
 
-    /** @type {Map<string, Object>} All units by ID */
+    /** @type {Map<string, Unit>} All units by ID */
     this.units = new Map();
 
-    /** @type {Map<string, Object>} All cities by ID */
+    /** @type {Map<string, City>} All cities by ID */
     this.cities = new Map();
 
     /** @type {Object} Game settings from setup screen */
@@ -40,9 +42,7 @@ class GameStateClass {
       mapSize: 'MEDIUM',
       fogMode: 'none',
       aiDifficulty: 'MEDIUM',
-      player1Name: 'Player 1',
-      player2Name: 'Player 2',
-      player2IsAI: true
+      playerSlots: [] // [{ name, isAI, color }, ...]
     };
 
     /** @type {string|null} Currently selected entity type: 'hex', 'unit', 'city' */
@@ -61,91 +61,59 @@ class GameStateClass {
     this._nextCityId = 1;
   }
 
-  /**
-   * Get the current player object.
-   * @returns {Object}
-   */
+  /** @returns {Player} */
   getCurrentPlayer() {
     return this.players[this.currentPlayerIndex];
   }
 
-  /**
-   * Get a player by index.
-   * @param {number} index
-   * @returns {Object}
-   */
+  /** @param {number} index */
   getPlayer(index) {
     return this.players[index];
   }
 
-  /**
-   * Generate a unique unit ID.
-   * @returns {string}
-   */
   generateUnitId() {
     return `u${this._nextUnitId++}`;
   }
 
-  /**
-   * Generate a unique city ID.
-   * @returns {string}
-   */
   generateCityId() {
     return `c${this._nextCityId++}`;
   }
 
-  /**
-   * Add a unit to the game state.
-   * @param {Object} unit
-   */
+  /** @param {Unit} unit */
   addUnit(unit) {
     this.units.set(unit.id, unit);
-    // Update hex
-    const hex = this.hexMap.getHex(unit.q, unit.r);
+    const hex = this.hexMap?.getHex(unit.q, unit.r);
     if (hex) hex.unitId = unit.id;
   }
 
-  /**
-   * Remove a unit from the game state.
-   * @param {string} unitId
-   */
+  /** @param {string} unitId */
   removeUnit(unitId) {
     const unit = this.units.get(unitId);
     if (unit) {
-      const hex = this.hexMap.getHex(unit.q, unit.r);
+      const hex = this.hexMap?.getHex(unit.q, unit.r);
       if (hex && hex.unitId === unitId) hex.unitId = null;
       this.units.delete(unitId);
     }
   }
 
-  /**
-   * Add a city to the game state.
-   * @param {Object} city
-   */
+  /** @param {City} city */
   addCity(city) {
     this.cities.set(city.id, city);
-    const hex = this.hexMap.getHex(city.q, city.r);
+    const hex = this.hexMap?.getHex(city.q, city.r);
     if (hex) hex.cityId = city.id;
   }
 
-  /**
-   * Remove a city from the game state.
-   * @param {string} cityId
-   */
+  /** @param {string} cityId */
   removeCity(cityId) {
     const city = this.cities.get(cityId);
     if (city) {
-      const hex = this.hexMap.getHex(city.q, city.r);
+      const hex = this.hexMap?.getHex(city.q, city.r);
       if (hex && hex.cityId === cityId) hex.cityId = null;
       this.cities.delete(cityId);
     }
   }
 
-  /**
-   * Get all units belonging to a player.
-   * @param {number} playerIndex
-   * @returns {Array<Object>}
-   */
+  /** @param {number} playerIndex */
   getPlayerUnits(playerIndex) {
     const result = [];
     this.units.forEach(unit => {
@@ -154,11 +122,7 @@ class GameStateClass {
     return result;
   }
 
-  /**
-   * Get all cities belonging to a player.
-   * @param {number} playerIndex
-   * @returns {Array<Object>}
-   */
+  /** @param {number} playerIndex */
   getPlayerCities(playerIndex) {
     const result = [];
     this.cities.forEach(city => {
@@ -171,10 +135,10 @@ class GameStateClass {
    * Get the unit at a specific hex, if any.
    * @param {number} q
    * @param {number} r
-   * @returns {Object|null}
+   * @returns {Unit|null}
    */
   getUnitAt(q, r) {
-    const hex = this.hexMap.getHex(q, r);
+    const hex = this.hexMap?.getHex(q, r);
     if (!hex || !hex.unitId) return null;
     return this.units.get(hex.unitId) || null;
   }
@@ -183,62 +147,48 @@ class GameStateClass {
    * Get the city at a specific hex, if any.
    * @param {number} q
    * @param {number} r
-   * @returns {Object|null}
+   * @returns {City|null}
    */
   getCityAt(q, r) {
-    const hex = this.hexMap.getHex(q, r);
+    const hex = this.hexMap?.getHex(q, r);
     if (!hex || !hex.cityId) return null;
     return this.cities.get(hex.cityId) || null;
   }
 
-  /**
-   * Serialize game state for save/load.
-   * @returns {Object}
-   */
+  /** Serialize game state for save/load. */
   toJSON() {
-    const unitsData = [];
-    this.units.forEach(u => unitsData.push({ ...u }));
-
-    const citiesData = [];
-    this.cities.forEach(c => citiesData.push({ ...c }));
-
     return {
       turnNumber: this.turnNumber,
       currentPlayerIndex: this.currentPlayerIndex,
       settings: { ...this.settings },
-      players: this.players.map(p => ({ ...p })),
+      players: this.players.map(p => p.toJSON()),
       map: this.hexMap.toJSON(),
-      units: unitsData,
-      cities: citiesData,
+      units: Array.from(this.units.values()).map(u => u.toJSON()),
+      cities: Array.from(this.cities.values()).map(c => c.toJSON()),
       nextUnitId: this._nextUnitId,
       nextCityId: this._nextCityId
     };
   }
 
-  /**
-   * Load game state from JSON data.
-   * @param {Object} json
-   */
+  /** Load game state from JSON data. */
   fromJSON(json) {
     this.reset();
     this.turnNumber = json.turnNumber;
     this.currentPlayerIndex = json.currentPlayerIndex;
     this.settings = { ...json.settings };
-    this.players = json.players.map(p => ({ ...p }));
+    this.players = (json.players || []).map(p => Player.fromJSON(p));
     this.hexMap = HexMap.fromJSON(json.map);
     this._nextUnitId = json.nextUnitId || 1;
     this._nextCityId = json.nextCityId || 1;
 
-    for (const u of json.units) {
-      this.units.set(u.id, { ...u });
-      const hex = this.hexMap.getHex(u.q, u.r);
-      if (hex) hex.unitId = u.id;
+    for (const u of json.units || []) {
+      const unit = Unit.fromJSON(u);
+      this.addUnit(unit);
     }
 
-    for (const c of json.cities) {
-      this.cities.set(c.id, { ...c });
-      const hex = this.hexMap.getHex(c.q, c.r);
-      if (hex) hex.cityId = c.id;
+    for (const c of json.cities || []) {
+      const city = City.fromJSON(c);
+      this.addCity(city);
     }
 
     this.isGameActive = true;
